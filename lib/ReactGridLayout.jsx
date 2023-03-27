@@ -306,10 +306,12 @@ export default class ReactGridLayout extends React.Component<Props, State> {
 
     this.props.onDrag(layout, oldDragItem, l, placeholder, e, node);
 
+    const { layout: newLayout } = allowOverlap
+      ? layout
+      : compact(layout, compactType(this.props), cols, false);
+
     this.setState({
-      layout: allowOverlap
-        ? layout
-        : compact(layout, compactType(this.props), cols, false),
+      layout: newLayout,
       activeDrag: placeholder
     });
   };
@@ -352,7 +354,7 @@ export default class ReactGridLayout extends React.Component<Props, State> {
     this.props.onDragStop(layout, oldDragItem, l, null, e, node);
 
     // Set state
-    const newLayout = allowOverlap
+    const { layout: newLayout } = allowOverlap
       ? layout
       : compact(layout, compactType(this.props), cols, false);
     const { oldLayout } = this.state;
@@ -454,27 +456,45 @@ export default class ReactGridLayout extends React.Component<Props, State> {
 
     const useX = typeof newX !== "undefined" ? newX : l.x;
 
-    // Create placeholder element (display only)
-    const placeholder = {
-      w: l.w,
-      h: l.h,
-      x: typeof newX !== "undefined" ? newX : l.x,
-      y: l.y,
-      static: true,
-      i: i
+    /**
+     * In this process we want to indicate how the different layout items
+     * will behave when this layout item is being dragged. This helps us to
+     * generate the new layout without actually applying the new drag state
+     * of this layout item to the state.layout
+     */
+    const comparisonLayoutItem = {
+      i,
+      newX: useX,
+      originalX: l.x
     };
+
+    const { layout: layoutToSave, shadowLayout } = allowOverlap
+      ? newLayout
+      : compact(
+          newLayout,
+          compactType(this.props),
+          cols,
+          false,
+          comparisonLayoutItem
+        );
+
+    const placeholder = shadowLayout.find(item => item.i === i);
+
+    // Create placeholder element (display only)
+    // const placeholder = {
+    //   w: l.w,
+    //   h: l.h,
+    //   x: useX,
+    //   y: l.y,
+    //   static: true,
+    //   i: i
+    // };
 
     this.props.onResize(newLayout, oldResizeItem, l, placeholder, e, node);
 
     // Re-compact the newLayout and set the drag placeholder.
     this.setState({
-      layout: allowOverlap
-        ? newLayout
-        : compact(newLayout, compactType(this.props), cols, false, {
-            i,
-            newX: useX,
-            originalX: l.x
-          }),
+      layout: layoutToSave,
       activeDrag: placeholder,
       newX: newX
     });
@@ -506,7 +526,7 @@ export default class ReactGridLayout extends React.Component<Props, State> {
     this.props.onResizeStop(activeLayout, oldResizeItem, l, null, e, node);
 
     // Set state
-    const newLayout = allowOverlap
+    const { layout: newLayout } = allowOverlap
       ? layout
       : compact(activeLayout, compactType(this.props), cols, false);
     const { oldLayout } = this.state;
@@ -749,7 +769,7 @@ export default class ReactGridLayout extends React.Component<Props, State> {
     const { droppingItem, cols } = this.props;
     const { layout } = this.state;
 
-    const newLayout = compact(
+    const { layout: newLayout } = compact(
       layout.filter(l => l.i !== droppingItem.i),
       compactType(this.props),
       cols,

@@ -309,7 +309,7 @@ export default class ReactGridLayout extends React.Component<Props, State> {
     this.setState({
       layout: allowOverlap
         ? layout
-        : compact(layout, compactType(this.props), cols, false, i),
+        : compact(layout, compactType(this.props), cols, false),
       activeDrag: placeholder
     });
   };
@@ -354,7 +354,7 @@ export default class ReactGridLayout extends React.Component<Props, State> {
     // Set state
     const newLayout = allowOverlap
       ? layout
-      : compact(layout, compactType(this.props), cols, false, i);
+      : compact(layout, compactType(this.props), cols, false);
     const { oldLayout } = this.state;
     this.setState({
       activeDrag: null,
@@ -398,9 +398,8 @@ export default class ReactGridLayout extends React.Component<Props, State> {
     GridResizeEvent,
     movementInfo
   ) => void = (i, w, h, { e, node, size }, { dragWest, moveLeft }) => {
-    const { layout, oldResizeItem } = this.state;
+    const { oldLayout: layout, oldResizeItem } = this.state;
     const { cols, preventCollision, allowOverlap } = this.props;
-
     const widthDelta = Math.abs(w - oldResizeItem.w) * (moveLeft ? -1 : 1);
     let newX;
 
@@ -411,7 +410,6 @@ export default class ReactGridLayout extends React.Component<Props, State> {
 
       if (dragWest || moveLeft) {
         newX = l.x + widthDelta;
-        console.log("NEWX", newX);
       }
 
       if (preventCollision && !allowOverlap) {
@@ -472,7 +470,11 @@ export default class ReactGridLayout extends React.Component<Props, State> {
     this.setState({
       layout: allowOverlap
         ? newLayout
-        : compact(newLayout, compactType(this.props), cols, false, i, useX),
+        : compact(newLayout, compactType(this.props), cols, false, {
+            i,
+            newX: useX,
+            originalX: l.x
+          }),
       activeDrag: placeholder,
       newX: newX
     });
@@ -506,7 +508,7 @@ export default class ReactGridLayout extends React.Component<Props, State> {
     // Set state
     const newLayout = allowOverlap
       ? layout
-      : compact(activeLayout, compactType(this.props), cols, false, i);
+      : compact(activeLayout, compactType(this.props), cols, false);
     const { oldLayout } = this.state;
     this.setState({
       activeDrag: null,

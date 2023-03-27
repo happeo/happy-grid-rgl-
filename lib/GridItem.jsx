@@ -208,7 +208,10 @@ export default class GridItem extends React.Component<Props, State> {
   state: State = {
     resizing: null,
     dragging: null,
-    className: ""
+    className: "",
+    absoluteLeft: 0,
+    absoluteTop: 0,
+    rejectHandles: []
   };
 
   elementRef: ReactRef<HTMLDivElement> = React.createRef();
@@ -218,6 +221,7 @@ export default class GridItem extends React.Component<Props, State> {
     // use this optimization.
     if (this.props.children !== nextProps.children) return true;
     if (this.props.droppingPosition !== nextProps.droppingPosition) return true;
+
     // TODO memoize these calculations so they don't take so long?
     const oldPosition = calcGridItemPosition(
       this.getPositionParams(this.props),
@@ -235,14 +239,18 @@ export default class GridItem extends React.Component<Props, State> {
       nextProps.h,
       nextState
     );
+
     return (
       !fastPositionEqual(oldPosition, newPosition) ||
-      this.props.useCSSTransforms !== nextProps.useCSSTransforms
+      this.props.useCSSTransforms !== nextProps.useCSSTransforms ||
+      this.state.absoluteLeft !== nextState.absoluteLeft ||
+      this.state.rejectHandles !== nextState.rejectHandles
     );
   }
 
   componentDidMount() {
     this.moveDroppingItem({});
+    this.validateHandles();
   }
 
   componentDidUpdate(prevProps: Props) {
@@ -394,9 +402,14 @@ export default class GridItem extends React.Component<Props, State> {
     const maxes = calcGridItemPosition(positionParams, 0, 0, maxW, maxH);
     const minConstraints = [mins.width, mins.height];
     const maxConstraints = [
-      Math.min(maxes.width, maxWidth),
+      maxes.width, // Math.min(maxes.width, maxWidth),
       Math.min(maxes.height, Infinity)
     ];
+
+    const dynamicHandles = resizeHandles?.filter(
+      handle => !this.state.rejectHandles.includes(handle)
+    );
+
     return (
       <Resizable
         // These are opts for the resize handle itself
@@ -412,7 +425,7 @@ export default class GridItem extends React.Component<Props, State> {
         onResizeStart={this.onResizeStart}
         onResize={this.onResize}
         transformScale={transformScale}
-        resizeHandles={resizeHandles}
+        resizeHandles={dynamicHandles}
         handle={resizeHandle}
       >
         {child}
@@ -511,6 +524,28 @@ export default class GridItem extends React.Component<Props, State> {
   };
 
   /**
+   * Validates handles, which allows us to hide w/e handles if the
+   * grid item is on the first/last column
+   */
+  validateHandles() {
+    const { x, w, cols } = this.props;
+
+    if (x + w >= cols && w === 1) {
+      this.setState({
+        rejectHandles: ["ne", "e", "se"]
+      });
+    } else if (x === 0 && w === 1) {
+      this.setState({
+        rejectHandles: ["nw", "w", "sw"]
+      });
+    } else {
+      this.setState({
+        rejectHandles: []
+      });
+    }
+  }
+
+  /**
    * onDragStop event handler
    * @param  {Event}  e             event data
    * @param  {Object} callbackData  an object with node, delta and position information
@@ -528,13 +563,37 @@ export default class GridItem extends React.Component<Props, State> {
     this.setState({ dragging: null });
 
     const { x, y } = calcXY(this.getPositionParams(), top, left, w, h);
-
+    this.validateHandles();
     return onDragStop.call(this, i, x, y, {
       e,
       node,
       newPosition
     });
   };
+
+  /**
+   * Calculate widget absolute position
+   * This allows us to resize left
+   */
+  absolutePositions(size, handle) {
+    const { width } = this.state.resizing || { width: 0 };
+    if (width === 0) {
+      return;
+    }
+
+    this.setState(state => {
+      let newLeft = state.absoluteLeft;
+      const deltaWidth = size.width - width;
+      if (handle[handle.length - 1] === "w") {
+        newLeft -= deltaWidth;
+      }
+
+      return {
+        ...state,
+        absoluteLeft: newLeft
+      };
+    });
+  }
 
   /**
    * onResizeStop event handler
@@ -546,6 +605,10 @@ export default class GridItem extends React.Component<Props, State> {
     callbackData
   ) => {
     this.onResizeHandler(e, callbackData, "onResizeStop");
+    this.setState({
+      absoluteLeft: 0
+    });
+    this.validateHandles();
   };
 
   /**
@@ -582,36 +645,50 @@ export default class GridItem extends React.Component<Props, State> {
    */
   onResizeHandler(
     e: Event,
-    { node, size }: { node: HTMLElement, size: Position },
+    { node, size, handle }: { node: HTMLElement, size: Position },
     handlerName: string
   ): void {
     const handler = this.props[handlerName];
+
     if (!handler) return;
+
+    this.absolutePositions(size, handle);
+
     const { cols, x, y, i, maxH, minH } = this.props;
     let { minW, maxW } = this.props;
-
+    const dragWest = this.state.absoluteLeft !== 0;
+    const moveLeft = this.state.absoluteLeft < 0;
     // Get new XY
     let { w, h } = calcWH(
       this.getPositionParams(),
       size.width,
       size.height,
       x,
-      y
+      y,
+      moveLeft
     );
 
     // minW should be at least 1 (TODO propTypes validation?)
     minW = Math.max(minW, 1);
 
     // maxW should be at most (cols - x)
-    maxW = Math.min(maxW, cols - x);
+    if (moveLeft) {
+      // User is expanding this to left
+      // we'll calculate the maxWidth based on the space on left
+      maxW = Math.min(maxW, x + w);
+    } else {
+      maxW = Math.min(maxW, cols - x);
+    }
 
     // Min/max capping
     w = clamp(w, minW, maxW);
     h = clamp(h, minH, maxH);
 
-    this.setState({ resizing: handlerName === "onResizeStop" ? null : size });
+    this.setState({
+      resizing: handlerName === "onResizeStop" ? null : size
+    });
 
-    handler.call(this, i, w, h, { e, node, size });
+    handler.call(this, i, w, h, { e, node, size }, { dragWest, moveLeft });
   }
 
   render(): ReactNode {
@@ -634,6 +711,7 @@ export default class GridItem extends React.Component<Props, State> {
       h,
       this.state
     );
+
     const child = React.Children.only(this.props.children);
 
     // Create the child element. We clone the existing element but modify its className and style.
@@ -654,6 +732,8 @@ export default class GridItem extends React.Component<Props, State> {
       ),
       // We can set the width and height on the child, but unfortunately we can't set the position.
       style: {
+        left: this.state.absoluteLeft,
+        // top: this.state.absoluteTop,
         ...this.props.style,
         ...child.props.style,
         ...this.createStyle(pos)

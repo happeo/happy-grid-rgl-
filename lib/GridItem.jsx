@@ -3,7 +3,13 @@ import React from "react";
 import PropTypes from "prop-types";
 import { DraggableCore } from "react-draggable";
 import { Resizable } from "react-resizable";
-import { fastPositionEqual, perc, setTopLeft, setTransform } from "./utils";
+import {
+  cloneLayoutItem,
+  fastPositionEqual,
+  perc,
+  setTopLeft,
+  setTransform
+} from "./utils";
 import {
   calcGridItemPosition,
   calcGridItemWHPx,
@@ -211,7 +217,8 @@ export default class GridItem extends React.Component<Props, State> {
     className: "",
     absoluteLeft: 0,
     absoluteTop: 0,
-    rejectHandles: []
+    rejectHandles: [],
+    oldItem: null
   };
 
   elementRef: ReactRef<HTMLDivElement> = React.createRef();
@@ -386,6 +393,7 @@ export default class GridItem extends React.Component<Props, State> {
       resizeHandles,
       resizeHandle
     } = this.props;
+
     const positionParams = this.getPositionParams();
 
     // This is the max possible width - doesn't go to infinity because of the width of the window
@@ -394,17 +402,15 @@ export default class GridItem extends React.Component<Props, State> {
       0,
       0,
       cols - x,
-      0
+      0,
+      null
     ).width;
 
     // Calculate min/max constraints using our min & maxes
     const mins = calcGridItemPosition(positionParams, 0, 0, minW, minH);
     const maxes = calcGridItemPosition(positionParams, 0, 0, maxW, maxH);
     const minConstraints = [mins.width, mins.height];
-    const maxConstraints = [
-      maxes.width, // Math.min(maxes.width, maxWidth),
-      Math.min(maxes.height, Infinity)
-    ];
+    const maxConstraints = [maxes.width, Math.min(maxes.height, Infinity)];
 
     const dynamicHandles = resizeHandles?.filter(
       handle => !this.state.rejectHandles.includes(handle)
@@ -590,7 +596,8 @@ export default class GridItem extends React.Component<Props, State> {
 
       return {
         ...state,
-        absoluteLeft: newLeft
+        absoluteLeft: newLeft,
+        dragLeft: newLeft < 0
       };
     });
   }
@@ -606,7 +613,8 @@ export default class GridItem extends React.Component<Props, State> {
   ) => {
     this.onResizeHandler(e, callbackData, "onResizeStop");
     this.setState({
-      absoluteLeft: 0
+      absoluteLeft: 0,
+      oldItem: null
     });
     this.validateHandles();
   };
@@ -621,6 +629,9 @@ export default class GridItem extends React.Component<Props, State> {
     callbackData
   ) => {
     this.onResizeHandler(e, callbackData, "onResizeStart");
+    this.setState({
+      oldItem: cloneLayoutItem(this.props)
+    });
   };
 
   /**
@@ -675,9 +686,9 @@ export default class GridItem extends React.Component<Props, State> {
     if (moveLeft) {
       // User is expanding this to left
       // we'll calculate the maxWidth based on the space on left
-      maxW = Math.min(maxW, x + w);
+      maxW = Math.min(maxW, x + w, cols);
     } else {
-      maxW = Math.min(maxW, cols - x);
+      maxW = Math.min(maxW, cols - x, cols);
     }
 
     // Min/max capping

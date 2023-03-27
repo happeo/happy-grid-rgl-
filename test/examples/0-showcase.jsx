@@ -128,7 +128,7 @@ export default class ShowcaseLayout extends React.Component<Props, State> {
 }
 
 function generateLayout() {
-  return _.map(_.range(0, 2), function(item, i) {
+  return _.map(_.range(0, 1), function(item, i) {
     var y = Math.ceil(Math.random() * 4) + 1;
     return {
       x: Math.round(Math.random() * 5) * 2,
